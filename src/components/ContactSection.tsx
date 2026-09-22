@@ -133,7 +133,6 @@ export default function ContactSection({ onOpenDomainModal }: ContactSectionProp
       console.error('Failed to save to localStorage', err);
     }
 
-    // 2. Dispatch to FormSubmit AJAX endpoint (sends directly to gsoni7424@gmail.com)
        // 2. Dispatch to our own Express backend (sends via Gmail)
     try {
       const controller = new AbortController();
