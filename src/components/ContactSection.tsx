@@ -134,29 +134,32 @@ export default function ContactSection({ onOpenDomainModal }: ContactSectionProp
     }
 
     // 2. Dispatch to FormSubmit AJAX endpoint (sends directly to gsoni7424@gmail.com)
+       // 2. Dispatch to our own Express backend (sends via Gmail)
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
 
-      await fetch(`https://formsubmit.co/ajax/${PORTFOLIO_DATA.personal.email}`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/contact`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           name: newMessage.name,
           email: newMessage.email,
-          _subject: `Portfolio Message from ${newMessage.name}: ${newMessage.subject}`,
-          message: newMessage.message,
-          _template: 'table',
-          _captcha: 'false'
+          subject: newMessage.subject,
+          message: newMessage.message
         }),
         signal: controller.signal
       });
       clearTimeout(timeoutId);
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        console.error('Backend responded with error:', data.error || res.statusText);
+      }
     } catch (networkError) {
-      // In case of network timeout or CORS sandbox, message is still safely logged in inbox
+      // In case of network timeout, message is still safely logged in inbox
       console.log('Online dispatch notice:', networkError);
     }
 
