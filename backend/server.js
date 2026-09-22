@@ -1,7 +1,6 @@
 // backend/server.js
 import express from "express";
 import cors from "cors";
-import nodemailer from "nodemailer";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -32,25 +31,17 @@ app.use(
 
 app.use(express.json());
 
-// --- Mail transporter ---
-// Uses Gmail + an App Password (NOT your normal Gmail password).
-// See README.md for how to generate one.
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.EMAIL_USER, // your Gmail address
-    pass: process.env.EMAIL_PASS, // 16-char Gmail App Password
-  },
-});
+// --- Mail via Resend (HTTPS API, not SMTP) ---
+// Render's free tier blocks outbound SMTP ports (465/587), so we send mail
+// through Resend's HTTPS API instead of nodemailer+Gmail SMTP.
+// Get a free API key at https://resend.com/api-keys
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
 
-// Verify transporter config on boot (logs a clear error early if creds are wrong)
-transporter.verify((error) => {
-  if (error) {
-    console.error("❌ Mail transporter failed to verify:", error.message);
-  } else {
-    console.log("✅ Mail transporter is ready to send messages");
-  }
-});
+if (!RESEND_API_KEY) {
+  console.error("❌ RESEND_API_KEY is not set in environment variables");
+} else {
+  console.log("✅ Resend API key loaded, ready to send messages");
+}
 
 // --- Health check (useful for Render + uptime pings) ---
 app.get("/", (req, res) => {
@@ -78,25 +69,50 @@ app.post("/api/contact", async (req, res) => {
       });
     }
 
-    const mailOptions = {
-      from: `"Portfolio Contact Form" <${process.env.EMAIL_USER}>`,
-      to: process.env.RECEIVER_EMAIL || process.env.EMAIL_USER,
-      replyTo: email,
-      subject: `Portfolio Message from ${name}: ${subject || "Portfolio Inquiry"}`,
-      text: `Name: ${name}\nEmail: ${email}\nSubject: ${subject || "Portfolio Inquiry"}\n\nMessage:\n${message}`,
-      html: `
-        <div style="font-family: sans-serif; line-height: 1.6;">
-          <h2>New Portfolio Message</h2>
-          <p><strong>Name:</strong> ${name}</p>
-          <p><strong>Email:</strong> ${email}</p>
-          <p><strong>Subject:</strong> ${subject || "Portfolio Inquiry"}</p>
-          <p><strong>Message:</strong></p>
-          <p style="white-space: pre-wrap; padding: 12px; background: #f5f5f5; border-radius: 8px;">${message}</p>
-        </div>
-      `,
-    };
+    if (!RESEND_API_KEY) {
+      return res.status(500).json({
+        success: false,
+        error: "Server email configuration is missing.",
+      });
+    }
 
-    await transporter.sendMail(mailOptions);
+    const resendResponse = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${RESEND_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        // onboarding@resend.dev works without verifying a domain, but can
+        // only deliver to the email address you signed up to Resend with.
+        // Once you verify your own domain on Resend, replace this with
+        // something like "Portfolio <contact@yourdomain.com>".
+        from: "Portfolio Contact Form <onboarding@resend.dev>",
+        to: [process.env.RECEIVER_EMAIL || process.env.EMAIL_USER],
+        reply_to: email,
+        subject: `Portfolio Message from ${name}: ${subject || "Portfolio Inquiry"}`,
+        text: `Name: ${name}\nEmail: ${email}\nSubject: ${subject || "Portfolio Inquiry"}\n\nMessage:\n${message}`,
+        html: `
+          <div style="font-family: sans-serif; line-height: 1.6;">
+            <h2>New Portfolio Message</h2>
+            <p><strong>Name:</strong> ${name}</p>
+            <p><strong>Email:</strong> ${email}</p>
+            <p><strong>Subject:</strong> ${subject || "Portfolio Inquiry"}</p>
+            <p><strong>Message:</strong></p>
+            <p style="white-space: pre-wrap; padding: 12px; background: #f5f5f5; border-radius: 8px;">${message}</p>
+          </div>
+        `,
+      }),
+    });
+
+    if (!resendResponse.ok) {
+      const errBody = await resendResponse.json().catch(() => ({}));
+      console.error("❌ Resend API error:", resendResponse.status, errBody);
+      return res.status(502).json({
+        success: false,
+        error: "Failed to send message via email provider.",
+      });
+    }
 
     return res.status(200).json({
       success: true,
