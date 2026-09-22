@@ -136,7 +136,7 @@ export default function ContactSection({ onOpenDomainModal }: ContactSectionProp
        // 2. Dispatch to our own Express backend (sends via Gmail)
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      const timeoutId = setTimeout(() => controller.abort(), 45000);
 
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/contact`, {
         method: 'POST',
